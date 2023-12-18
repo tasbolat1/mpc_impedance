@@ -1,0 +1,5 @@
+do_mpc==4.6.4
+notebook
+rospy
+std_msgs
+rospkg
