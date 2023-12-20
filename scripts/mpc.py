@@ -9,7 +9,7 @@ class CM_MPC():
     '''
     Generation circular motion centered around [x_c, y_c]
     '''
-    def __init__(self, x_c, y_c, delta_t, target_angular_vel):
+    def __init__(self, x_c, y_c, delta_t, target_angular_vel, radius):
 
         self.x_c = x_c
         self.y_c = y_c
@@ -29,13 +29,14 @@ class CM_MPC():
         self.eye_m_m = np.eye(self.m)
 
         # Radius
-        self.radius = 0.2
+        self.radius = radius
 
         # Initialize
-        self.model_setup()
-        self.sim_setup()
-        self.mpc_setup()
-        
+        self.restart()
+
+
+    def graphics_setup(self):
+        self.mpc_graphics = do_mpc.graphics.Graphics(self.mpc.data)
 
     def model_setup(self):
         model_type = 'continuous'
@@ -51,7 +52,7 @@ class CM_MPC():
         self.theta_des_ddot = self.model.set_variable(var_type='_u', var_name='theta_des_ddot', shape=(1,1))
 
         # RHS
-        pose_des_expr = vertcat(self.x_c + self.radius*sin(self.theta_des), self.y_c + self.radius*cos(self.theta_des))
+        pose_des_expr = vertcat(self.x_c + self.radius*cos(self.theta_des), self.y_c + self.radius*sin(self.theta_des))
         pose_dot_expr = self.D_inv@self.K@(pose_des_expr-self.pose)
         self.model.set_rhs("pose", pose_dot_expr)
         self.model.set_rhs("theta_des", self.theta_des_dot)
@@ -73,7 +74,7 @@ class CM_MPC():
             'n_horizon': 10,
             't_step': self.delta_t,
             'n_robust': 1,
-            'store_full_solution': False,
+            'store_full_solution': True,
             'nlpsol_opts':surpress_ipopt,
         }
         self.mpc.set_param(**setup_mpc)
@@ -93,10 +94,13 @@ class CM_MPC():
 
         self.mpc.bounds['lower','_x', 'pose', 1] = -0.5 # x
         self.mpc.bounds['upper','_x', 'pose', 1] = 0.5 # y
+
+        # self.mpc.bounds['lower','_x', 'theta_des'] = -np.pi # x
+        # self.mpc.bounds['upper','_x', 'theta_des'] = np.pi # y
         
         # Bounds on control
-        self.mpc.bounds['lower','_u', 'theta_des_ddot'] = -0.1
-        self.mpc.bounds['upper','_u', 'theta_des_ddot'] = 0.1
+        self.mpc.bounds['lower','_u', 'theta_des_ddot'] = -5.5
+        self.mpc.bounds['upper','_u', 'theta_des_ddot'] = 5.5
 
         self.mpc.setup()
 
@@ -108,23 +112,26 @@ class CM_MPC():
 
     def restart(self):
         # Initialize
+        print('Restarting.')
         self.model_setup()
         self.sim_setup()
         self.mpc_setup()
+        self.graphics_setup()
 
  
 
 if __name__ == '__main__':
 
-    x_c = 0.4
-    y_c = 0.0
+    x_c = 4.56838317e-01
+    y_c = -2.40397883e-04
+
     mpc_controller = CM_MPC(x_c=x_c,
                             y_c=y_c,
-                            delta_t=0.2,
-                            target_angular_vel=0.2)
+                            delta_t=0.1,
+                            target_angular_vel=1.0,
+                            radius=0.1)
 
-
-    pose_x0 = np.array([0,0]).reshape(-1,1)
+    pose_x0 = np.array([0.5571318446562233, -0.0009131756511991303]).reshape(-1,1)
     theta_des = np.array([0]).reshape(-1,1)
     theta_des_dot = np.array([0]).reshape(-1,1)
 
@@ -132,7 +139,7 @@ if __name__ == '__main__':
 
     mpc_controller.set_x0(x0)
 
-    for t in range(1000):
+    for t in range(150):
         start_time = time.time()
         u0 = mpc_controller.mpc.make_step(x0)
         print('{}: Time for mpc solver:{}'.format(t, time.time()-start_time))
@@ -146,6 +153,18 @@ if __name__ == '__main__':
             print("Stopping Controller ...")
             break
 
+    #     print(mpc_controller.mpc.data.export().keys())
+    #     break
+    
+    # sss = mpc_controller.mpc.data.prediction(('_x', 'theta_des_dot'), t_ind=-1)
+    # print(sss)
+        
+
+
+    # fig, ax = plt.subplots(nrows=4, figsize=(16,9))
+    # mpc_controller.mpc_graphics.add_line(var_type='_x', var_name='theta_des_dot', axis=ax[0])
+    # mpc_controller.mpc_graphics.plot_predictions()
+    # plt.show()
     fig, ax = plt.subplots(nrows=4, figsize=(16,9))
     ax[0].plot(mpc_controller.mpc.data['_time'], mpc_controller.mpc.data['_x'][:,3], label='theta_dot')
     ax[0].legend()
